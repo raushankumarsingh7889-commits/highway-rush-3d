@@ -1,0 +1,11 @@
+{
+  "name": "Highway Rush 3D",
+  "short_name": "Highway Rush 3D",
+  "description": "A fun 3D highway racing game by Raushan Singh.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "categories": ["games", "entertainment"]
+}
