@@ -1,7 +1,7 @@
 ﻿```html
 <!DOCTYPE html>
 <html lang="en">
-<head>
+<link rel="manifest" href="manifest.json">
 <meta charset="UTF-8">
 
 <meta name="viewport"
@@ -638,7 +638,15 @@ canvas{
 </style>
 </head>
 
-<body>
+</<script>
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js")
+            .then(() => console.log("Service Worker registered"))
+            .catch(err => console.log("Service Worker error:", err));
+    });
+}
+</script>body>
 
 
 <!-- =========================
