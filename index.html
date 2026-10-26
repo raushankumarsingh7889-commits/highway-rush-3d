@@ -1,1 +1,1693 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0,
+      maximum-scale=1.0, user-scalable=no">
 
+<title>Highway Rush 3D</title>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    user-select:none;
+}
+
+html,body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#58c8ff;
+    font-family:Arial,sans-serif;
+}
+
+canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    touch-action:none;
+}
+
+#hud{
+    position:fixed;
+    top:15px;
+    left:15px;
+    right:15px;
+    display:flex;
+    justify-content:space-between;
+    z-index:20;
+    pointer-events:none;
+}
+
+.hudBox{
+    color:white;
+    background:rgba(0,0,0,.55);
+    padding:10px 15px;
+    border-radius:12px;
+    font-size:17px;
+    font-weight:bold;
+}
+
+#controls{
+    position:fixed;
+    bottom:25px;
+    left:0;
+    right:0;
+    display:flex;
+    justify-content:center;
+    gap:30px;
+    z-index:20;
+}
+
+.control{
+    width:75px;
+    height:65px;
+    border-radius:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(0,0,0,.55);
+    color:white;
+    font-size:34px;
+}
+
+#gameOver{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.7);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:50;
+}
+
+.gameOverBox{
+    width:min(90%,380px);
+    background:white;
+    padding:30px;
+    border-radius:22px;
+    text-align:center;
+}
+
+.gameOverBox h1{
+    color:#e53935;
+    margin-bottom:15px;
+}
+
+.gameOverBox p{
+    font-size:19px;
+    margin:8px;
+}
+
+button{
+    margin-top:15px;
+    border:0;
+    padding:13px 28px;
+    border-radius:12px;
+    background:#1976d2;
+    color:white;
+    font-size:18px;
+    font-weight:bold;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+    <div class="hudBox">
+        🏆 Score: <span id="score">0</span>
+    </div>
+
+    <div class="hudBox">
+        🪙 Coins: <span id="coins">0</span>
+    </div>
+</div>
+
+<div id="controls">
+    <div class="control" id="left">◀</div>
+    <div class="control" id="right">▶</div>
+</div>
+
+<div id="gameOver">
+    <div class="gameOverBox">
+        <h1>GAME OVER</h1>
+
+        <p>🏆 Score:
+            <b id="finalScore">0</b>
+        </p>
+
+        <p>🪙 Coins:
+            <b id="finalCoins">0</b>
+        </p>
+
+        <button onclick="restart()">
+            PLAY AGAIN
+        </button>
+    </div>
+</div>
+
+<script>
+
+const canvas =
+    document.getElementById("game");
+
+const ctx =
+    canvas.getContext("2d");
+
+let W,H;
+
+function resize(){
+
+    W=window.innerWidth;
+    H=window.innerHeight;
+
+    const dpr=
+        Math.min(window.devicePixelRatio||1,2);
+
+    canvas.width=W*dpr;
+    canvas.height=H*dpr;
+
+    canvas.style.width=W+"px";
+    canvas.style.height=H+"px";
+
+    ctx.setTransform(
+        dpr,0,0,dpr,0,0
+    );
+}
+
+window.addEventListener("resize",resize);
+resize();
+
+
+/* =========================
+   GAME DATA
+========================= */
+
+let gameRunning=true;
+
+let score=0;
+let coins=0;
+
+let speed=7;
+
+let playerLane=1;
+
+let roadScroll=0;
+
+let spawnTimer=0;
+
+let objects=[];
+
+
+/* =========================
+   ROAD SETTINGS
+========================= */
+
+const horizonRatio=.34;
+
+function horizon(){
+    return H*horizonRatio;
+}
+
+function perspective(y){
+
+    let t=
+        (y-horizon())/
+        (H-horizon());
+
+    return Math.max(
+        0,
+        Math.min(1,t)
+    );
+}
+
+function roadWidth(y){
+
+    const t=perspective(y);
+
+    return 170 + t*700;
+}
+
+function roadLeft(y){
+
+    return W/2-roadWidth(y)/2;
+}
+
+function laneX(lane,y){
+
+    const left=roadLeft(y);
+    const width=roadWidth(y);
+
+    return left+
+           width*(lane+.5)/3;
+}
+
+
+/* =========================
+   BACKGROUND
+========================= */
+
+function drawSky(){
+
+    const gradient=
+        ctx.createLinearGradient(
+            0,0,0,H
+        );
+
+    gradient.addColorStop(
+        0,
+        "#45bfff"
+    );
+
+    gradient.addColorStop(
+        .65,
+        "#a9e9ff"
+    );
+
+    gradient.addColorStop(
+        1,
+        "#d7f6ff"
+    );
+
+    ctx.fillStyle=gradient;
+
+    ctx.fillRect(
+        0,0,W,H
+    );
+}
+
+
+function drawCloud(x,y,s){
+
+    ctx.fillStyle=
+        "rgba(255,255,255,.85)";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x,
+        y,
+        22*s,
+        0,
+        Math.PI*2
+    );
+
+    ctx.arc(
+        x+28*s,
+        y-12*s,
+        28*s,
+        0,
+        Math.PI*2
+    );
+
+    ctx.arc(
+        x+58*s,
+        y,
+        22*s,
+        0,
+        Math.PI*2
+    );
+
+    ctx.fill();
+}
+
+
+/* =========================
+   GROUND
+========================= */
+
+function drawGround(){
+
+    ctx.fillStyle="#399c43";
+
+    ctx.fillRect(
+        0,
+        horizon(),
+        W,
+        H
+    );
+}
+
+
+/* =========================
+   BUILDINGS
+========================= */
+
+function drawBuilding(
+    x,
+    baseY,
+    width,
+    height,
+    color,
+    depth
+){
+
+    const t=perspective(baseY);
+
+    const w=width*t;
+    const h=height*t;
+
+    if(w<3 || h<3)
+        return;
+
+    x-=w/2;
+
+    // building body
+
+    ctx.fillStyle=color;
+
+    ctx.fillRect(
+        x,
+        baseY-h,
+        w,
+        h
+    );
+
+
+    // roof
+
+    ctx.fillStyle=
+        "rgba(0,0,0,.18)";
+
+    ctx.fillRect(
+        x,
+        baseY-h,
+        w,
+        Math.max(2,4*t)
+    );
+
+
+    // windows
+
+    const rows=4;
+    const cols=3;
+
+    for(let r=0;r<rows;r++){
+
+        for(let c=0;c<cols;c++){
+
+            const wx=
+                x+
+                w*.16+
+                c*w*.29;
+
+            const wy=
+                baseY-
+                h+
+                h*.18+
+                r*h*.18;
+
+            ctx.fillStyle=
+                (r+c)%2===0
+                ? "#ffe879"
+                : "#b8e8ff";
+
+            ctx.fillRect(
+                wx,
+                wy,
+                Math.max(2,w*.10),
+                Math.max(2,h*.09)
+            );
+        }
+    }
+}
+
+
+/* =========================
+   TREES
+========================= */
+
+function drawTree(
+    x,
+    baseY,
+    size
+){
+
+    const t=perspective(baseY);
+
+    const s=size*t;
+
+    if(s<2)
+        return;
+
+    // shadow
+
+    ctx.fillStyle=
+        "rgba(0,0,0,.18)";
+
+    ctx.beginPath();
+
+    ctx.ellipse(
+        x,
+        baseY,
+        s*.5,
+        s*.12,
+        0,
+        0,
+        Math.PI*2
+    );
+
+    ctx.fill();
+
+
+    // trunk
+
+    ctx.fillStyle="#70452c";
+
+    ctx.fillRect(
+        x-s*.10,
+        baseY-s*.65,
+        s*.20,
+        s*.65
+    );
+
+
+    // leaves
+
+    ctx.fillStyle="#176f2e";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x,
+        baseY-s*.85,
+        s*.35,
+        0,
+        Math.PI*2
+    );
+
+    ctx.arc(
+        x-s*.25,
+        baseY-s*.68,
+        s*.30,
+        0,
+        Math.PI*2
+    );
+
+    ctx.arc(
+        x+s*.25,
+        baseY-s*.68,
+        s*.30,
+        0,
+        Math.PI*2
+    );
+
+    ctx.fill();
+
+    // highlight
+
+    ctx.fillStyle="#2e9b42";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x-s*.10,
+        baseY-s*.94,
+        s*.15,
+        0,
+        Math.PI*2
+    );
+
+    ctx.fill();
+}
+
+
+/* =========================
+   WORLD OBJECTS
+========================= */
+
+let worldItems=[];
+
+
+/*
+   Buildings and trees are created
+   ONCE and then move toward camera.
+*/
+
+function createWorld(){
+
+    worldItems=[];
+
+    for(let i=0;i<22;i++){
+
+        const side=
+            Math.random()<.5
+            ? -1
+            : 1;
+
+        const y=
+            horizon()+
+            20+
+            i*55;
+
+        const type=
+            Math.random()<.55
+            ? "tree"
+            : "building";
+
+        worldItems.push({
+
+            side:side,
+
+            y:y,
+
+            type:type,
+
+            size:
+                type==="tree"
+                ? 80+Math.random()*60
+                : 100+Math.random()*80,
+
+            color:[
+                "#c65d4a",
+                "#66758a",
+                "#d28a42",
+                "#8c65a8",
+                "#477a91"
+            ][
+                Math.floor(
+                    Math.random()*5
+                )
+            ]
+        });
+    }
+}
+
+
+/* =========================
+   DRAW WORLD
+========================= */
+
+function drawWorld(){
+
+    /*
+       Sort by Y so distant objects
+       are drawn first.
+    */
+
+    worldItems.sort(
+        (a,b)=>a.y-b.y
+    );
+
+    for(const item of worldItems){
+
+        if(item.y<horizon())
+            continue;
+
+        const rw=
+            roadWidth(item.y);
+
+        const distance=
+            rw/2+55;
+
+        const x=
+            W/2+
+            item.side*distance;
+
+        if(item.type==="tree"){
+
+            drawTree(
+                x,
+                item.y,
+                item.size
+            );
+
+        }else{
+
+            drawBuilding(
+                x,
+                item.y,
+                item.size,
+                item.size*1.5,
+                item.color
+            );
+        }
+    }
+}
+
+
+/* =========================
+   ROAD
+========================= */
+
+function drawRoad(){
+
+    const hy=horizon();
+
+    /*
+       LONG ROAD
+    */
+
+    ctx.fillStyle="#383838";
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        W/2-roadWidth(hy)/2,
+        hy
+    );
+
+    ctx.lineTo(
+        W/2+roadWidth(hy)/2,
+        hy
+    );
+
+    ctx.lineTo(
+        W/2+roadWidth(H)/2,
+        H
+    );
+
+    ctx.lineTo(
+        W/2-roadWidth(H)/2,
+        H
+    );
+
+    ctx.closePath();
+
+    ctx.fill();
+
+
+    /*
+       ROAD EDGE
+    */
+
+    ctx.strokeStyle="#ffffff";
+
+    ctx.lineWidth=6;
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        W/2-roadWidth(hy)/2,
+        hy
+    );
+
+    ctx.lineTo(
+        W/2-roadWidth(H)/2,
+        H
+    );
+
+    ctx.moveTo(
+        W/2+roadWidth(hy)/2,
+        hy
+    );
+
+    ctx.lineTo(
+        W/2+roadWidth(H)/2,
+        H
+    );
+
+    ctx.stroke();
+
+
+    /*
+       LANE MARKINGS
+    */
+
+    roadScroll+=speed;
+
+    if(roadScroll>80)
+        roadScroll=0;
+
+    for(
+        let y=hy-80+roadScroll;
+        y<H;
+        y+=80
+    ){
+
+        for(
+            let lane=1;
+            lane<3;
+            lane++
+        ){
+
+            const y2=y+42;
+
+            const x1=
+                W/2-
+                roadWidth(y)/2+
+                roadWidth(y)*lane/3;
+
+            const x2=
+                W/2-
+                roadWidth(y2)/2+
+                roadWidth(y2)*lane/3;
+
+            const t=
+                perspective(y);
+
+            ctx.strokeStyle="#eeeeee";
+
+            ctx.lineWidth=
+                2+t*5;
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                x1,
+                y
+            );
+
+            ctx.lineTo(
+                x2,
+                y2
+            );
+
+            ctx.stroke();
+        }
+    }
+}
+
+
+/* =========================
+   PLAYER CAR
+========================= */
+
+function drawCar(){
+
+    const y=H*.82;
+
+    const x=
+        laneX(
+            playerLane,
+            y
+        );
+
+    const w=86;
+    const h=145;
+
+
+    /*
+       CAR SHADOW
+    */
+
+    ctx.fillStyle=
+        "rgba(0,0,0,.35)";
+
+    ctx.beginPath();
+
+    ctx.ellipse(
+        x,
+        y+h*.42,
+        w*.62,
+        14,
+        0,
+        0,
+        Math.PI*2
+    );
+
+    ctx.fill();
+
+
+    /*
+       WHEELS
+    */
+
+    ctx.fillStyle="#101010";
+
+    const wheelW=15;
+    const wheelH=39;
+
+    ctx.fillRect(
+        x-w*.56,
+        y-h*.25,
+        wheelW,
+        wheelH
+    );
+
+    ctx.fillRect(
+        x+w*.39,
+        y-h*.25,
+        wheelW,
+        wheelH
+    );
+
+    ctx.fillRect(
+        x-w*.56,
+        y+h*.12,
+        wheelW,
+        wheelH
+    );
+
+    ctx.fillRect(
+        x+w*.39,
+        y+h*.12,
+        wheelW,
+        wheelH
+    );
+
+
+    /*
+       MAIN CAR BODY
+    */
+
+    const bodyGrad=
+        ctx.createLinearGradient(
+            x-w/2,
+            0,
+            x+w/2,
+            0
+        );
+
+    bodyGrad.addColorStop(
+        0,
+        "#a91520"
+    );
+
+    bodyGrad.addColorStop(
+        .5,
+        "#f23842"
+    );
+
+    bodyGrad.addColorStop(
+        1,
+        "#a91520"
+    );
+
+    ctx.fillStyle=bodyGrad;
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        x-w/2,
+        y-h/2,
+        w,
+        h,
+        17
+    );
+
+    ctx.fill();
+
+
+    /*
+       HOOD
+    */
+
+    ctx.fillStyle="#d9232e";
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        x-w*.36,
+        y-h*.36,
+        w*.72,
+        h*.30,
+        12
+    );
+
+    ctx.fill();
+
+
+    /*
+       ROOF
+    */
+
+    ctx.fillStyle="#b51e28";
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        x-w*.34,
+        y-h*.12
+    );
+
+    ctx.lineTo(
+        x-w*.25,
+        y-h*.38
+    );
+
+    ctx.lineTo(
+        x+w*.25,
+        y-h*.38
+    );
+
+    ctx.lineTo(
+        x+w*.34,
+        y-h*.12
+    );
+
+    ctx.closePath();
+
+    ctx.fill();
+
+
+    /*
+       FRONT WINDSHIELD
+    */
+
+    ctx.fillStyle="#8fe0ff";
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        x-w*.24,
+        y-h*.31
+    );
+
+    ctx.lineTo(
+        x+w*.24,
+        y-h*.31
+    );
+
+    ctx.lineTo(
+        x+w*.28,
+        y-h*.12
+    );
+
+    ctx.lineTo(
+        x-w*.28,
+        y-h*.12
+    );
+
+    ctx.closePath();
+
+    ctx.fill();
+
+
+    /*
+       WINDSHIELD REFLECTION
+    */
+
+    ctx.fillStyle=
+        "rgba(255,255,255,.65)";
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        x-w*.18,
+        y-h*.29
+    );
+
+    ctx.lineTo(
+        x-w*.04,
+        y-h*.29
+    );
+
+    ctx.lineTo(
+        x-w*.16,
+        y-h*.15
+    );
+
+    ctx.closePath();
+
+    ctx.fill();
+
+
+    /*
+       HEADLIGHTS
+    */
+
+    ctx.fillStyle="#fff5a0";
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        x-w*.37,
+        y-h*.43,
+        w*.23,
+        15,
+        5
+    );
+
+    ctx.roundRect(
+        x+w*.14,
+        y-h*.43,
+        w*.23,
+        15,
+        5
+    );
+
+    ctx.fill();
+
+
+    /*
+       BUMPER
+    */
+
+    ctx.fillStyle="#222";
+
+    ctx.fillRect(
+        x-w*.34,
+        y+h*.39,
+        w*.68,
+        8
+    );
+
+
+    /*
+       RED SIDE LIGHTS
+    */
+
+    ctx.fillStyle="#ff6870";
+
+    ctx.fillRect(
+        x-w*.42,
+        y+h*.24,
+        8,
+        12
+    );
+
+    ctx.fillRect(
+        x+w*.34,
+        y+h*.24,
+        8,
+        12
+    );
+}
+
+
+/* =========================
+   GAME OBJECTS
+========================= */
+
+function spawnObject(){
+
+    const lane=
+        Math.floor(
+            Math.random()*3
+        );
+
+    const r=Math.random();
+
+    let type;
+
+    if(r<.48)
+        type="coin";
+
+    else if(r<.68)
+        type="gift";
+
+    else
+        type="obstacle";
+
+
+    objects.push({
+
+        lane:lane,
+
+        y:horizon()+20,
+
+        type:type,
+
+        value:
+            Math.floor(
+                Math.random()*451
+            )+50
+    });
+}
+
+
+/* =========================
+   DRAW OBJECT
+========================= */
+
+function drawObject(obj){
+
+    const x=
+        laneX(
+            obj.lane,
+            obj.y
+        );
+
+    const t=
+        perspective(obj.y);
+
+    const s=
+        12+t*55;
+
+
+    if(obj.type==="coin"){
+
+        ctx.fillStyle="#ffd21a";
+
+        ctx.beginPath();
+
+        ctx.arc(
+            x,
+            obj.y,
+            s*.42,
+            0,
+            Math.PI*2
+        );
+
+        ctx.fill();
+
+        ctx.strokeStyle="#fff5a0";
+
+        ctx.lineWidth=3;
+
+        ctx.stroke();
+
+        ctx.fillStyle="#8a6200";
+
+        ctx.font=
+            `bold ${Math.max(
+                10,
+                s*.45
+            )}px Arial`;
+
+        ctx.textAlign="center";
+
+        ctx.fillText(
+            "$",
+            x,
+            obj.y+s*.16
+        );
+    }
+
+
+    else if(obj.type==="gift"){
+
+        /*
+           Gift box
+        */
+
+        ctx.fillStyle="#8e44ad";
+
+        ctx.fillRect(
+            x-s*.5,
+            obj.y-s*.5,
+            s,
+            s
+        );
+
+        ctx.fillStyle="#ffd21a";
+
+        ctx.fillRect(
+            x-s*.08,
+            obj.y-s*.5,
+            s*.16,
+            s
+        );
+
+        ctx.fillRect(
+            x-s*.5,
+            obj.y-s*.08,
+            s,
+            s*.16
+        );
+
+
+        /*
+           Bonus number
+        */
+
+        ctx.fillStyle="#ffffff";
+
+        ctx.font=
+            `bold ${Math.max(
+                9,
+                s*.28
+            )}px Arial`;
+
+        ctx.textAlign="center";
+
+        ctx.fillText(
+            "+"+obj.value,
+            x,
+            obj.y-s*.65
+        );
+    }
+
+
+    else{
+
+        /*
+           ROAD BARRIER
+        */
+
+        ctx.fillStyle="#ff7518";
+
+        ctx.fillRect(
+            x-s*.58,
+            obj.y-s*.40,
+            s*1.16,
+            s*.8
+        );
+
+        ctx.fillStyle="#ffffff";
+
+        ctx.lineWidth=5;
+
+        for(
+            let i=-1;
+            i<=1;
+            i++
+        ){
+
+            ctx.save();
+
+            ctx.translate(
+                x+i*s*.38,
+                obj.y
+            );
+
+            ctx.rotate(
+                -.65
+            );
+
+            ctx.fillRect(
+                -3,
+                -s*.32,
+                6,
+                s*.64
+            );
+
+            ctx.restore();
+        }
+    }
+}
+
+
+/* =========================
+   COLLISION
+========================= */
+
+function collision(obj){
+
+    const playerY=H*.82;
+
+    const vertical=
+        Math.abs(
+            obj.y-playerY
+        );
+
+    return(
+        vertical<65 &&
+        obj.lane===playerLane
+    );
+}
+
+
+/* =========================
+   UPDATE WORLD
+========================= */
+
+function updateWorld(){
+
+    /*
+       This makes BOTH trees
+       AND buildings move.
+    */
+
+    for(const item of worldItems){
+
+        item.y+=speed;
+
+        if(item.y>H+100){
+
+            item.y=
+                horizon()+
+                Math.random()*100;
+
+            item.side=
+                Math.random()<.5
+                ?-1
+                :1;
+
+            if(Math.random()<.55){
+
+                item.type="tree";
+
+            }else{
+
+                item.type="building";
+
+                item.color=[
+                    "#c65d4a",
+                    "#66758a",
+                    "#d28a42",
+                    "#8c65a8",
+                    "#477a91"
+                ][
+                    Math.floor(
+                        Math.random()*5
+                    )
+                ];
+            }
+        }
+    }
+}
+
+
+/* =========================
+   UPDATE GAME
+========================= */
+
+function update(){
+
+    if(!gameRunning)
+        return;
+
+    score+=.08;
+
+    speed+=.0005;
+
+
+    updateWorld();
+
+
+    spawnTimer--;
+
+    if(spawnTimer<=0){
+
+        spawnObject();
+
+        spawnTimer=
+            Math.max(
+                38,
+                75-speed*2
+            );
+    }
+
+
+    for(
+        let i=objects.length-1;
+        i>=0;
+        i--
+    ){
+
+        const obj=objects[i];
+
+        obj.y+=speed;
+
+
+        if(collision(obj)){
+
+            if(
+                obj.type==="obstacle"
+            ){
+
+                gameOver();
+
+                return;
+            }
+
+
+            if(
+                obj.type==="coin"
+            ){
+
+                coins++;
+
+                score+=25;
+
+                objects.splice(
+                    i,
+                    1
+                );
+
+                continue;
+            }
+
+
+            if(
+                obj.type==="gift"
+            ){
+
+                score+=obj.value;
+
+                objects.splice(
+                    i,
+                    1
+                );
+
+                continue;
+            }
+        }
+
+
+        if(obj.y>H+100){
+
+            objects.splice(
+                i,
+                1
+            );
+        }
+    }
+
+
+    document.getElementById(
+        "score"
+    ).textContent=
+        Math.floor(score);
+
+    document.getElementById(
+        "coins"
+    ).textContent=
+        coins;
+}
+
+
+/* =========================
+   GAME OVER
+========================= */
+
+function gameOver(){
+
+    gameRunning=false;
+
+    document.getElementById(
+        "finalScore"
+    ).textContent=
+        Math.floor(score);
+
+    document.getElementById(
+        "finalCoins"
+    ).textContent=
+        coins;
+
+    document.getElementById(
+        "gameOver"
+    ).style.display=
+        "flex";
+}
+
+
+/* =========================
+   RESTART
+========================= */
+
+function restart(){
+
+    score=0;
+    coins=0;
+
+    speed=7;
+
+    playerLane=1;
+
+    objects=[];
+
+    spawnTimer=0;
+
+    gameRunning=true;
+
+    createWorld();
+
+    document.getElementById(
+        "gameOver"
+    ).style.display=
+        "none";
+}
+
+
+/* =========================
+   CONTROLS
+========================= */
+
+function moveLeft(){
+
+    if(playerLane>0)
+        playerLane--;
+}
+
+function moveRight(){
+
+    if(playerLane<2)
+        playerLane++;
+}
+
+
+/* Keyboard */
+
+window.addEventListener(
+    "keydown",
+    function(e){
+
+        if(
+            e.key==="ArrowLeft" ||
+            e.key==="a"
+        ){
+            moveLeft();
+        }
+
+        if(
+            e.key==="ArrowRight" ||
+            e.key==="d"
+        ){
+            moveRight();
+        }
+    }
+);
+
+
+/* Touch buttons */
+
+document.getElementById(
+    "left"
+).addEventListener(
+    "touchstart",
+    function(e){
+
+        e.preventDefault();
+
+        moveLeft();
+    }
+);
+
+document.getElementById(
+    "right"
+).addEventListener(
+    "touchstart",
+    function(e){
+
+        e.preventDefault();
+
+        moveRight();
+    }
+);
+
+
+/* Mouse */
+
+document.getElementById(
+    "left"
+).addEventListener(
+    "click",
+    moveLeft
+);
+
+document.getElementById(
+    "right"
+).addEventListener(
+    "click",
+    moveRight
+);
+
+
+/* Swipe */
+
+let touchStartX=0;
+
+canvas.addEventListener(
+    "touchstart",
+    function(e){
+
+        touchStartX=
+            e.touches[0].clientX;
+    }
+);
+
+canvas.addEventListener(
+    "touchend",
+    function(e){
+
+        const endX=
+            e.changedTouches[0].clientX;
+
+        const diff=
+            endX-touchStartX;
+
+        if(
+            Math.abs(diff)>40
+        ){
+
+            if(diff<0)
+                moveLeft();
+            else
+                moveRight();
+        }
+    }
+);
+
+
+/* =========================
+   MAIN DRAW
+========================= */
+
+function draw(){
+
+    drawSky();
+
+    drawCloud(
+        W*.18,
+        H*.12,
+        1
+    );
+
+    drawCloud(
+        W*.73,
+        H*.18,
+        .75
+    );
+
+    drawGround();
+
+    drawWorld();
+
+    drawRoad();
+
+
+    /*
+       Objects sorted by distance
+    */
+
+    objects.sort(
+        (a,b)=>a.y-b.y
+    );
+
+    for(
+        const obj of objects
+    ){
+
+        drawObject(obj);
+    }
+
+
+    drawCar();
+}
+
+
+/* =========================
+   GAME LOOP
+========================= */
+
+function loop(){
+
+    update();
+
+    draw();
+
+    requestAnimationFrame(loop);
+}
+
+
+/* Start */
+
+createWorld();
+
+loop();
+
+</script>
+
+</body>
+</html>
+```
